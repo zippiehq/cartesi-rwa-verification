@@ -5,6 +5,8 @@ import path from 'path'
 import { stringify } from 'safe-stable-stringify'
 import secp256k1 from 'secp256k1'
 
+import { create } from 'ipfs-http-client'
+
 import App from '../carbon-credits/app'
 import {
   Operation,
@@ -16,6 +18,11 @@ import {
   OperationCarbonCredits,
 } from '../carbon-credits/types'
 
+const defaultApiUrl = 'http://127.0.0.1:5001'
+
+const apiUrl = process.env.IPFS_API || defaultApiUrl
+const ipfs = create({ url: apiUrl })
+
 // Keys
 const privateKey1 = 'eb8e6e1b2f89b5863b73777855fb160c5fdf0e2d51f92a645ba6c17906e03f6f' // 0459def4fe9d584d115e5cfa1fc9d428ff5a8b23023c094cafb745ad7e53bacc5f184123456558db7168ca7122c5e21348fa4ea4af7a61c9eb4c8ca8c6461b59ac
 const publickKey1Compressed = secp256k1.publicKeyCreate(Uint8Array.from(Buffer.from(privateKey1, 'hex')))
@@ -25,7 +32,7 @@ const privateKey2 = 'b58a3b22e9d5c7248ddcae731703da1f84fd265d370ffb559494c64c547
 const publickKey2Compressed = secp256k1.publicKeyCreate(Uint8Array.from(Buffer.from(privateKey2, 'hex')))
 const publicKey2 = Buffer.from(secp256k1.publicKeyConvert(publickKey2Compressed, false)).toString('hex')
 
-const app = new App(`${__dirname}/.input`, `${__dirname}/.state`, `${__dirname}/.output`)
+const app = new App(`${__dirname}/.input`, `/state`)
 const datasetId = crypto.randomBytes(32).toString('hex')
 
 const createSignedTransaction = (
@@ -52,6 +59,20 @@ const createSignedTransaction = (
   return transaction
 }
 
+const readFileIpfs = async (path: string): Promise<string> => {
+  try {
+    const chunks = []
+    for await (const chunk of ipfs.files.read(path)) {
+      chunks.push(chunk)
+    }
+    const data = Buffer.concat(chunks).toString()
+    return data
+  } catch (error) {
+    if ((error as Error).message.includes('file does not exist')) return ''
+    throw error
+  }
+}
+
 describe('Datachain App', () => {
   beforeAll(async () => {
     // Remove input, state, output folders (inluding files)
@@ -64,10 +85,12 @@ describe('Datachain App', () => {
     fs.mkdirSync(path.join(__dirname, `/.input`), { recursive: true })
     fs.mkdirSync(path.join(__dirname, `/.state`), { recursive: true })
     fs.mkdirSync(path.join(__dirname, `/.output`), { recursive: true })
+
+    await ipfs.files.rm('/state', { recursive: true })
   })
 
   describe('Airimpact Carbon Credit Dataset - Multiple transactions with single operations', () => {
-    it('init dataset', () => {
+    it('init dataset', async () => {
       // Create list of operations
       const operations: DatasetInit[] = [
         {
@@ -86,22 +109,22 @@ describe('Datachain App', () => {
 
       fs.writeFileSync(`${__dirname}/.input/transaction.json`, stringify(transaction, null, 2))
 
-      app.run()
+      await app.run()
 
-      const dataset = JSON.parse(fs.readFileSync(`${__dirname}/.state/dataset.json`, 'utf-8'))
+      const dataset = JSON.parse(await readFileIpfs(`/state/dataset.json`))
       expect(dataset).toEqual({
         id: operations[0].params.datasetId,
         name: 'airimpact-carbon-credit-dataset-v1',
         version: '1.1',
       })
 
-      const nonces = JSON.parse(fs.readFileSync(`${__dirname}/.state/nonces.json`, 'utf-8'))
+      const nonces = JSON.parse(await readFileIpfs(`/state/nonces.json`))
       expect(nonces).toEqual(expect.arrayContaining([transaction.nonce]))
 
-      const owners = JSON.parse(fs.readFileSync(`${__dirname}/.state/owners.json`, 'utf-8'))
+      const owners = JSON.parse(await readFileIpfs(`/state/owners.json`))
       expect(owners).toEqual([operations[0].params.owner])
 
-      const events = JSON.parse(fs.readFileSync(`${__dirname}/.state/events.json`, 'utf-8'))
+      const events = JSON.parse(await readFileIpfs(`/state/events.json`))
       expect(events).toEqual(
         expect.arrayContaining([
           {
@@ -119,7 +142,7 @@ describe('Datachain App', () => {
       )
     })
 
-    it('add owner', () => {
+    it('add owner', async () => {
       // Create list of operations
       const operations = [
         {
@@ -137,15 +160,15 @@ describe('Datachain App', () => {
 
       fs.writeFileSync(`${__dirname}/.input/transaction.json`, stringify(transaction, null, 2))
 
-      app.run()
+      await app.run()
 
-      const nonces = JSON.parse(fs.readFileSync(`${__dirname}/.state/nonces.json`, 'utf-8'))
+      const nonces = JSON.parse(await readFileIpfs(`/state/nonces.json`))
       expect(nonces).toEqual(expect.arrayContaining([transaction.nonce]))
 
-      const owners = JSON.parse(fs.readFileSync(`${__dirname}/.state/owners.json`, 'utf-8'))
+      const owners = JSON.parse(await readFileIpfs(`/state/owners.json`))
       expect(owners).toEqual([publicKey1, publicKey2])
 
-      const events = JSON.parse(fs.readFileSync(`${__dirname}/.state/events.json`, 'utf-8'))
+      const events = JSON.parse(await readFileIpfs(`/state/events.json`))
       expect(events).toEqual(
         expect.arrayContaining([
           {
@@ -162,7 +185,7 @@ describe('Datachain App', () => {
       )
     })
 
-    it('update metadata', () => {
+    it('update metadata', async () => {
       // Create list of operations
       const operations = [
         {
@@ -188,12 +211,12 @@ describe('Datachain App', () => {
 
       fs.writeFileSync(`${__dirname}/.input/transaction.json`, stringify(transaction, null, 2))
 
-      app.run()
+      await app.run()
 
-      const nonces = JSON.parse(fs.readFileSync(`${__dirname}/.state/nonces.json`, 'utf-8'))
+      const nonces = JSON.parse(await readFileIpfs(`/state/nonces.json`))
       expect(nonces).toEqual(expect.arrayContaining([transaction.nonce]))
 
-      const metadata = JSON.parse(fs.readFileSync(`${__dirname}/.state/metadata.json`, 'utf-8'))
+      const metadata = JSON.parse(await readFileIpfs(`/state/metadata.json`))
       expect(metadata).toEqual({
         contract: '',
         name: 'Airimpact Carbon Credit Dataset',
@@ -204,7 +227,7 @@ describe('Datachain App', () => {
         'asset-type': 'Digital Asset',
       })
 
-      const events = JSON.parse(fs.readFileSync(`${__dirname}/.state/events.json`, 'utf-8'))
+      const events = JSON.parse(await readFileIpfs(`/state/events.json`))
       expect(events).toEqual(
         expect.arrayContaining([
           {
@@ -218,7 +241,7 @@ describe('Datachain App', () => {
       )
     })
 
-    it('mint two forward batches', () => {
+    it('mint two forward batches', async () => {
       // Create list of operations
       const operations: AssetsMintForwardBatch[] = [
         {
@@ -254,12 +277,12 @@ describe('Datachain App', () => {
 
       fs.writeFileSync(`${__dirname}/.input/transaction.json`, stringify(transaction, null, 2))
 
-      app.run()
+      await app.run()
 
-      const nonces = JSON.parse(fs.readFileSync(`${__dirname}/.state/nonces.json`, 'utf-8'))
+      const nonces = JSON.parse(await readFileIpfs(`/state/nonces.json`))
       expect(nonces).toEqual(expect.arrayContaining([transaction.nonce]))
 
-      const batches = JSON.parse(fs.readFileSync(`${__dirname}/.state/batches.json`, 'utf-8'))
+      const batches = JSON.parse(await readFileIpfs(`/state/batches.json`))
       expect(batches).toEqual([
         {
           id: 1,
@@ -281,7 +304,7 @@ describe('Datachain App', () => {
         },
       ])
 
-      const assets = JSON.parse(fs.readFileSync(`${__dirname}/.state/assets.json`, 'utf-8'))
+      const assets = JSON.parse(await readFileIpfs(`/state/assets.json`))
       expect(assets).toEqual([
         {
           batchId: 1,
@@ -345,12 +368,12 @@ describe('Datachain App', () => {
         },
       ])
 
-      const balances = JSON.parse(fs.readFileSync(`${__dirname}/.state/balances.json`, 'utf-8'))
+      const balances = JSON.parse(await readFileIpfs(`/state/balances.json`))
       expect(balances).toEqual({
         owner: 6,
       })
 
-      const events = JSON.parse(fs.readFileSync(`${__dirname}/.state/events.json`, 'utf-8'))
+      const events = JSON.parse(await readFileIpfs(`/state/events.json`))
       expect(events).toEqual(
         expect.arrayContaining([
           {
@@ -393,7 +416,7 @@ describe('Datachain App', () => {
       )
     })
 
-    it('mint three carbon credits', () => {
+    it('mint three carbon credits', async () => {
       // Create list of operations
       const operations: AssetsMintCarbonCredits[] = [
         {
@@ -418,12 +441,12 @@ describe('Datachain App', () => {
 
       fs.writeFileSync(`${__dirname}/.input/transaction.json`, stringify(transaction, null, 2))
 
-      app.run()
+      await app.run()
 
-      const nonces = JSON.parse(fs.readFileSync(`${__dirname}/.state/nonces.json`, 'utf-8'))
+      const nonces = JSON.parse(await readFileIpfs(`/state/nonces.json`))
       expect(nonces).toEqual(expect.arrayContaining([transaction.nonce]))
 
-      const assets = JSON.parse(fs.readFileSync(`${__dirname}/.state/assets.json`, 'utf-8'))
+      const assets = JSON.parse(await readFileIpfs(`/state/assets.json`))
       expect(assets).toEqual([
         {
           batchId: 1,
@@ -497,12 +520,12 @@ describe('Datachain App', () => {
         },
       ])
 
-      const balances = JSON.parse(fs.readFileSync(`${__dirname}/.state/balances.json`, 'utf-8'))
+      const balances = JSON.parse(await readFileIpfs(`/state/balances.json`))
       expect(balances).toEqual({
         owner: 7,
       })
 
-      const events = JSON.parse(fs.readFileSync(`${__dirname}/.state/events.json`, 'utf-8'))
+      const events = JSON.parse(await readFileIpfs(`/state/events.json`))
       expect(events).toEqual(
         expect.arrayContaining([
           {
@@ -576,7 +599,7 @@ describe('Datachain App', () => {
       )
     })
 
-    it('transfer two asset', () => {
+    it('transfer two asset', async () => {
       // Create list of operations
       const operations = [
         {
@@ -604,12 +627,12 @@ describe('Datachain App', () => {
 
       fs.writeFileSync(`${__dirname}/.input/transaction.json`, stringify(transaction, null, 2))
 
-      app.run()
+      await app.run()
 
-      const nonces = JSON.parse(fs.readFileSync(`${__dirname}/.state/nonces.json`, 'utf-8'))
+      const nonces = JSON.parse(await readFileIpfs(`/state/nonces.json`))
       expect(nonces).toEqual(expect.arrayContaining([transaction.nonce]))
 
-      const assets = JSON.parse(fs.readFileSync(`${__dirname}/.state/assets.json`, 'utf-8'))
+      const assets = JSON.parse(await readFileIpfs(`/state/assets.json`))
       expect(assets).toEqual([
         {
           batchId: 1,
@@ -683,14 +706,14 @@ describe('Datachain App', () => {
         },
       ])
 
-      const balances = JSON.parse(fs.readFileSync(`${__dirname}/.state/balances.json`, 'utf-8'))
+      const balances = JSON.parse(await readFileIpfs(`/state/balances.json`))
       expect(balances).toEqual({
         owner: 5,
         [publicKey1]: 1,
         [publicKey2]: 1,
       })
 
-      const events = JSON.parse(fs.readFileSync(`${__dirname}/.state/events.json`, 'utf-8'))
+      const events = JSON.parse(await readFileIpfs(`/state/events.json`))
       expect(events).toEqual(
         expect.arrayContaining([
           {
@@ -721,7 +744,7 @@ describe('Datachain App', () => {
       )
     })
 
-    it('revoke one owner', () => {
+    it('revoke one owner', async () => {
       // Create list of operations
       const operations = [
         {
@@ -739,15 +762,15 @@ describe('Datachain App', () => {
 
       fs.writeFileSync(`${__dirname}/.input/transaction.json`, stringify(transaction, null, 2))
 
-      app.run()
+      await app.run()
 
-      const nonces = JSON.parse(fs.readFileSync(`${__dirname}/.state/nonces.json`, 'utf-8'))
+      const nonces = JSON.parse(await readFileIpfs(`/state/nonces.json`))
       expect(nonces).toEqual(expect.arrayContaining([transaction.nonce]))
 
-      const owners = JSON.parse(fs.readFileSync(`${__dirname}/.state/owners.json`, 'utf-8'))
+      const owners = JSON.parse(await readFileIpfs(`/state/owners.json`))
       expect(owners).toEqual([publicKey2])
 
-      const events = JSON.parse(fs.readFileSync(`${__dirname}/.state/events.json`, 'utf-8'))
+      const events = JSON.parse(await readFileIpfs(`/state/events.json`))
       expect(events).toEqual(
         expect.arrayContaining([
           {
@@ -766,7 +789,7 @@ describe('Datachain App', () => {
   })
 
   describe('Airimpact Carbon Credit Dataset - Single transaction with multiple operations', () => {
-    it('send all operations signed in one transaction', () => {
+    it('send all operations signed in one transaction', async () => {
       // Remove input, state, output folders (inluding files)
       fs.rmSync(path.join(__dirname, `/.input`), { recursive: true })
       fs.rmSync(path.join(__dirname, `/.state`), { recursive: true })
@@ -776,6 +799,8 @@ describe('Datachain App', () => {
       fs.mkdirSync(path.join(__dirname, `/.input`), { recursive: true })
       fs.mkdirSync(path.join(__dirname, `/.state`), { recursive: true })
       fs.mkdirSync(path.join(__dirname, `/.output`), { recursive: true })
+
+      await ipfs.files.rm('/state', { recursive: true })
 
       // Create list of operations
       const operations: OperationCarbonCredits[] = [
@@ -878,18 +903,18 @@ describe('Datachain App', () => {
 
       fs.writeFileSync(`${__dirname}/.input/transaction.json`, stringify(transaction, null, 2))
 
-      app.run()
+      await app.run()
 
-      const dataset = JSON.parse(fs.readFileSync(`${__dirname}/.state/dataset.json`, 'utf-8'))
+      const dataset = JSON.parse(await readFileIpfs(`/state/dataset.json`))
       expect(dataset).toEqual({ id: datasetId, name: 'airimpact-carbon-credit-dataset-v1', version: '1.1' })
 
-      const nonces = JSON.parse(fs.readFileSync(`${__dirname}/.state/nonces.json`, 'utf-8'))
+      const nonces = JSON.parse(await readFileIpfs(`/state/nonces.json`))
       expect(nonces).toEqual(expect.arrayContaining([transaction.nonce]))
 
-      const owners = JSON.parse(fs.readFileSync(`${__dirname}/.state/owners.json`, 'utf-8'))
+      const owners = JSON.parse(await readFileIpfs(`/state/owners.json`))
       expect(owners).toEqual([publicKey1, publicKey2])
 
-      const events = JSON.parse(fs.readFileSync(`${__dirname}/.state/events.json`, 'utf-8'))
+      const events = JSON.parse(await readFileIpfs(`/state/events.json`))
       expect(events).toEqual(
         expect.arrayContaining([
           {

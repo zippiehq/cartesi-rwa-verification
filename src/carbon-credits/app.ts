@@ -16,17 +16,49 @@ import {
   validateAssetsTransfer,
 } from './validation'
 
+import { create } from 'ipfs-http-client'
+
+const apiUrl = process.env.IPFS_API || 'http://127.0.0.1:5001'
+const ipfs = create({ url: apiUrl })
+
 export default class App {
   private inputPath: string
 
   private statePath: string
 
-  private outputPath: string
-
-  constructor(inputPath: string, statePath: string, outputPath: string) {
+  constructor(inputPath: string, statePath: string) {
     this.inputPath = inputPath
     this.statePath = statePath
-    this.outputPath = outputPath
+  }
+
+  private async existFileIpfs(path: string): Promise<boolean> {
+    try {
+      await ipfs.files.stat(path)
+      return true
+    } catch (error) {
+      if ((error as Error).message.includes('file does not exist')) return false
+      throw error
+    }
+  }
+
+  private async readFileIpfs(path: string): Promise<string> {
+    try {
+      const chunks = []
+      for await (const chunk of ipfs.files.read(path)) {
+        chunks.push(chunk)
+      }
+      const data = Buffer.concat(chunks).toString()
+      return data
+    } catch (error) {
+      if ((error as Error).message.includes('file does not exist')) return ''
+      throw error
+    }
+  }
+
+  private async writeFileIpfs(path: string, data: string): Promise<void> {
+    const exist = await this.existFileIpfs(path)
+    if (exist) await ipfs.files.rm(path) // Remove file if exists (if new data is less than old data, the old data will remain in the file)
+    await ipfs.files.write(path, data, { create: true })
   }
 
   public async run(): Promise<void> {
@@ -37,6 +69,10 @@ export default class App {
         timestamp: Date.now(),
         status: 'success',
         message: 'All assets verified correctly',
+      }
+
+      if (!(await this.existFileIpfs(`${this.statePath}`))) {
+        await ipfs.files.mkdir(`${this.statePath}`)
       }
 
       // Read transaction input (doesn't exisit on first run after deployment, and compare with  https://ethereum.org/en/developers/docs/transactions/)
@@ -69,8 +105,8 @@ export default class App {
 
         // Read dataset
         let dataset: DatasetInfo | null = null
-        if (fs.existsSync(`${this.statePath}/dataset.json`)) {
-          dataset = JSON.parse(fs.readFileSync(`${this.statePath}/dataset.json`, 'utf-8'))
+        if (await this.existFileIpfs(`${this.statePath}/dataset.json`)) {
+          dataset = JSON.parse(await this.readFileIpfs(`${this.statePath}/dataset.json`))
         }
 
         // Check datasetId
@@ -78,8 +114,8 @@ export default class App {
 
         // Read nonces
         let nonces: Nonce[] = []
-        if (fs.existsSync(`${this.statePath}/nonces.json`)) {
-          nonces = JSON.parse(fs.readFileSync(`${this.statePath}/nonces.json`, 'utf-8'))
+        if (await this.existFileIpfs(`${this.statePath}/nonces.json`)) {
+          nonces = JSON.parse(await this.readFileIpfs(`${this.statePath}/nonces.json`))
         }
 
         // Check nonce
@@ -88,38 +124,38 @@ export default class App {
 
         // Read owners
         let owners: Owner[] = []
-        if (fs.existsSync(`${this.statePath}/owners.json`)) {
-          owners = JSON.parse(fs.readFileSync(`${this.statePath}/owners.json`, 'utf-8'))
+        if (await this.existFileIpfs(`${this.statePath}/owners.json`)) {
+          owners = JSON.parse(await this.readFileIpfs(`${this.statePath}/owners.json`))
         }
 
         // Read metadata
         let metadata: Metadata | {} = {}
-        if (fs.existsSync(`${this.statePath}/metadata.json`)) {
-          metadata = JSON.parse(fs.readFileSync(`${this.statePath}/metadata.json`, 'utf-8'))
+        if (await this.existFileIpfs(`${this.statePath}/metadata.json`)) {
+          metadata = JSON.parse(await this.readFileIpfs(`${this.statePath}/metadata.json`))
         }
 
         // Read batches
         let batches: Batch[] = []
-        if (fs.existsSync(`${this.statePath}/batches.json`)) {
-          batches = JSON.parse(fs.readFileSync(`${this.statePath}/batches.json`, 'utf-8'))
+        if (await this.existFileIpfs(`${this.statePath}/batches.json`)) {
+          batches = JSON.parse(await this.readFileIpfs(`${this.statePath}/batches.json`))
         }
 
         // Read assets
         let assets: Asset[] = []
-        if (fs.existsSync(`${this.statePath}/assets.json`)) {
-          assets = JSON.parse(fs.readFileSync(`${this.statePath}/assets.json`, 'utf-8'))
+        if (await this.existFileIpfs(`${this.statePath}/assets.json`)) {
+          assets = JSON.parse(await this.readFileIpfs(`${this.statePath}/assets.json`))
         }
 
         // Read balances
         let balances: Record<string, Balanace> = {}
-        if (fs.existsSync(`${this.statePath}/balances.json`)) {
-          balances = JSON.parse(fs.readFileSync(`${this.statePath}/balances.json`, 'utf-8'))
+        if (await this.existFileIpfs(`${this.statePath}/balances.json`)) {
+          balances = JSON.parse(await this.readFileIpfs(`${this.statePath}/balances.json`))
         }
 
         // Read events
         let events: Event[] = []
-        if (fs.existsSync(`${this.statePath}/events.json`)) {
-          events = JSON.parse(fs.readFileSync(`${this.statePath}/events.json`, 'utf-8'))
+        if (await this.existFileIpfs(`${this.statePath}/events.json`)) {
+          events = JSON.parse(await this.readFileIpfs(`${this.statePath}/events.json`))
         }
 
         // Process operations
@@ -449,50 +485,41 @@ export default class App {
         })
 
         // Write dataset
-        fs.writeFileSync(`${this.statePath}/dataset.json`, JSON.stringify(dataset, null, 2))
-        fs.copyFileSync(`${this.statePath}/dataset.json`, `${this.outputPath}/dataset.json`)
+        await this.writeFileIpfs(`${this.statePath}/dataset.json`, JSON.stringify(dataset, null, 2))
 
         // Write nonces
-        fs.writeFileSync(`${this.statePath}/nonces.json`, JSON.stringify(nonces, null, 2))
-        fs.copyFileSync(`${this.statePath}/nonces.json`, `${this.outputPath}/nonces.json`)
+        await this.writeFileIpfs(`${this.statePath}/nonces.json`, JSON.stringify(nonces, null, 2))
 
         // Write owners
-        fs.writeFileSync(`${this.statePath}/owners.json`, JSON.stringify(owners, null, 2))
-        fs.copyFileSync(`${this.statePath}/owners.json`, `${this.outputPath}/owners.json`)
+        await this.writeFileIpfs(`${this.statePath}/owners.json`, JSON.stringify(owners, null, 2))
 
         // Write metadata
-        fs.writeFileSync(`${this.statePath}/metadata.json`, JSON.stringify(metadata, null, 2))
-        fs.copyFileSync(`${this.statePath}/metadata.json`, `${this.outputPath}/metadata.json`)
+        await this.writeFileIpfs(`${this.statePath}/metadata.json`, JSON.stringify(metadata, null, 2))
 
         // Write batches
-        fs.writeFileSync(`${this.statePath}/batches.json`, JSON.stringify(batches, null, 2))
-        fs.copyFileSync(`${this.statePath}/batches.json`, `${this.outputPath}/batches.json`)
+        await this.writeFileIpfs(`${this.statePath}/batches.json`, JSON.stringify(batches, null, 2))
 
         // Write assets
-        fs.writeFileSync(`${this.statePath}/assets.json`, JSON.stringify(assets, null, 2))
-        fs.copyFileSync(`${this.statePath}/assets.json`, `${this.outputPath}/assets.json`)
+        await this.writeFileIpfs(`${this.statePath}/assets.json`, JSON.stringify(assets, null, 2))
 
         // Write balances
-        fs.writeFileSync(`${this.statePath}/balances.json`, JSON.stringify(balances, null, 2))
-        fs.copyFileSync(`${this.statePath}/balances.json`, `${this.outputPath}/balances.json`)
+        await this.writeFileIpfs(`${this.statePath}/balances.json`, JSON.stringify(balances, null, 2))
 
         // Write transfers
-        fs.writeFileSync(`${this.statePath}/events.json`, JSON.stringify(events, null, 2))
-        fs.copyFileSync(`${this.statePath}/events.json`, `${this.outputPath}/events.json`)
+        await this.writeFileIpfs(`${this.statePath}/events.json`, JSON.stringify(events, null, 2))
 
         // Copy transaction input to output (for easy access)
-        fs.copyFileSync(`${this.inputPath}/transaction.json`, `${this.outputPath}/transaction.json`)
+        await this.writeFileIpfs(`${this.statePath}/transaction.json`, JSON.stringify(transaction, null, 2))
       }
 
       // Update verification status history
-      if (!fs.existsSync(`${this.statePath}/verifications.json`)) {
-        fs.writeFileSync(`${this.statePath}/verifications.json`, JSON.stringify([verification], null, 2))
+      if (!(await this.existFileIpfs(`${this.statePath}/verifications.json`))) {
+        await this.writeFileIpfs(`${this.statePath}/verifications.json`, JSON.stringify([verification], null, 2))
       } else {
-        const verifications = JSON.parse(fs.readFileSync(`${this.statePath}/verifications.json`, 'utf-8'))
+        const verifications = JSON.parse(await this.readFileIpfs(`${this.statePath}/verifications.json`))
         verifications.push(verification)
-        fs.writeFileSync(`${this.statePath}/verifications.json`, JSON.stringify(verifications, null, 2))
+        await this.writeFileIpfs(`${this.statePath}/verifications.json`, JSON.stringify(verifications, null, 2))
       }
-      fs.copyFileSync(`${this.statePath}/verifications.json`, `${this.outputPath}/verifications.json`)
     } catch (err) {
       console.log(err)
       process.exit(1)
