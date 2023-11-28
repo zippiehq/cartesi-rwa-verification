@@ -1,11 +1,10 @@
 import crypto from 'crypto'
-import fs from 'fs'
-import path from 'path'
 
 import { stringify } from 'safe-stable-stringify'
 import secp256k1 from 'secp256k1'
 
 import { create } from 'ipfs-http-client'
+import axios from 'axios'
 
 import App from '../carbon-credits/app'
 import {
@@ -32,8 +31,10 @@ const privateKey2 = 'b58a3b22e9d5c7248ddcae731703da1f84fd265d370ffb559494c64c547
 const publickKey2Compressed = secp256k1.publicKeyCreate(Uint8Array.from(Buffer.from(privateKey2, 'hex')))
 const publicKey2 = Buffer.from(secp256k1.publicKeyConvert(publickKey2Compressed, false)).toString('hex')
 
-const app = new App(`${__dirname}/.input`, `/state`)
+const app = new App()
 const datasetId = crypto.randomBytes(32).toString('hex')
+
+const mockedAxios = axios as jest.Mocked<typeof axios>
 
 const createSignedTransaction = (
   datasetId: string,
@@ -73,23 +74,49 @@ const readFileIpfs = async (path: string): Promise<string> => {
   }
 }
 
+const mockAxiosCartesiFinish = (status: number, transaction: Transaction | null) => {
+  mockedAxios.post.mockImplementation(async (route) => {
+    if (route.includes('/finish'))
+      return Promise.resolve({
+        data: {
+          request_type: 'advance_state',
+          data: transaction ? stringify(transaction, null, 2) : '',
+        },
+        status,
+        statusText: 'OK',
+        config: {},
+        headers: {},
+      })
+  })
+}
+
+jest.mock('axios')
+
 describe('Datachain App', () => {
   beforeAll(async () => {
-    // Remove input, state, output folders (inluding files)
-    if (fs.existsSync(path.join(__dirname, `/.input`))) fs.rmSync(path.join(__dirname, `/.input`), { recursive: true })
-    if (fs.existsSync(path.join(__dirname, `/.state`))) fs.rmSync(path.join(__dirname, `/.state`), { recursive: true })
-    if (fs.existsSync(path.join(__dirname, `/.output`)))
-      fs.rmSync(path.join(__dirname, `/.output`), { recursive: true })
-
-    // Re-create empty input, state, output folders
-    fs.mkdirSync(path.join(__dirname, `/.input`), { recursive: true })
-    fs.mkdirSync(path.join(__dirname, `/.state`), { recursive: true })
-    fs.mkdirSync(path.join(__dirname, `/.output`), { recursive: true })
-
     await ipfs.files.rm('/state', { recursive: true })
   })
 
   describe('Airimpact Carbon Credit Dataset - Multiple transactions with single operations', () => {
+    it('run app without new transaction available', async () => {
+      // Status 202 means no new transaction available
+      mockAxiosCartesiFinish(202, null)
+
+      await app.run()
+
+      const verifications = JSON.parse(await readFileIpfs(`/state/verifications.json`))
+      expect(verifications).toEqual(
+        expect.arrayContaining([
+          {
+            transactionHash: '', // No transaction hash
+            timestamp: verifications[0].timestamp,
+            status: 'success',
+            message: 'All assets verified correctly',
+          },
+        ]),
+      )
+    })
+
     it('init dataset', async () => {
       // Create list of operations
       const operations: DatasetInit[] = [
@@ -107,7 +134,8 @@ describe('Datachain App', () => {
       // Create signed transaction
       const transaction = createSignedTransaction(datasetId, privateKey1, publicKey1, operations)
 
-      fs.writeFileSync(`${__dirname}/.input/transaction.json`, stringify(transaction, null, 2))
+      // Status 200 means new transaction available
+      mockAxiosCartesiFinish(200, transaction)
 
       await app.run()
 
@@ -140,6 +168,25 @@ describe('Datachain App', () => {
           },
         ]),
       )
+
+      const verifications = JSON.parse(await readFileIpfs(`/state/verifications.json`))
+      expect(verifications.length).toBe(2)
+      expect(verifications).toEqual(
+        expect.arrayContaining([
+          {
+            transactionHash: '',
+            timestamp: verifications[0].timestamp,
+            status: 'success',
+            message: 'All assets verified correctly',
+          },
+          {
+            transactionHash: transaction.hash,
+            timestamp: verifications[1].timestamp,
+            status: 'success',
+            message: 'All assets verified correctly',
+          },
+        ]),
+      )
     })
 
     it('add owner', async () => {
@@ -158,7 +205,7 @@ describe('Datachain App', () => {
       // Create signed transaction
       const transaction = createSignedTransaction(datasetId, privateKey1, publicKey1, operations)
 
-      fs.writeFileSync(`${__dirname}/.input/transaction.json`, stringify(transaction, null, 2))
+      mockAxiosCartesiFinish(200, transaction)
 
       await app.run()
 
@@ -209,7 +256,7 @@ describe('Datachain App', () => {
       // Sign transaction
       const transaction = createSignedTransaction(datasetId, privateKey1, publicKey1, operations)
 
-      fs.writeFileSync(`${__dirname}/.input/transaction.json`, stringify(transaction, null, 2))
+      mockAxiosCartesiFinish(200, transaction)
 
       await app.run()
 
@@ -275,7 +322,7 @@ describe('Datachain App', () => {
       // Create signed transaction
       const transaction = createSignedTransaction(datasetId, privateKey1, publicKey1, operations)
 
-      fs.writeFileSync(`${__dirname}/.input/transaction.json`, stringify(transaction, null, 2))
+      mockAxiosCartesiFinish(200, transaction)
 
       await app.run()
 
@@ -439,7 +486,7 @@ describe('Datachain App', () => {
       // Create signed transaction
       const transaction = createSignedTransaction(datasetId, privateKey1, publicKey1, operations)
 
-      fs.writeFileSync(`${__dirname}/.input/transaction.json`, stringify(transaction, null, 2))
+      mockAxiosCartesiFinish(200, transaction)
 
       await app.run()
 
@@ -625,7 +672,7 @@ describe('Datachain App', () => {
       // Create signed transaction
       const transaction = createSignedTransaction(datasetId, privateKey1, publicKey1, operations)
 
-      fs.writeFileSync(`${__dirname}/.input/transaction.json`, stringify(transaction, null, 2))
+      mockAxiosCartesiFinish(200, transaction)
 
       await app.run()
 
@@ -760,7 +807,7 @@ describe('Datachain App', () => {
       // Create signed transaction
       const transaction = createSignedTransaction(datasetId, privateKey1, publicKey1, operations)
 
-      fs.writeFileSync(`${__dirname}/.input/transaction.json`, stringify(transaction, null, 2))
+      mockAxiosCartesiFinish(200, transaction)
 
       await app.run()
 
@@ -790,16 +837,6 @@ describe('Datachain App', () => {
 
   describe('Airimpact Carbon Credit Dataset - Single transaction with multiple operations', () => {
     it('send all operations signed in one transaction', async () => {
-      // Remove input, state, output folders (inluding files)
-      fs.rmSync(path.join(__dirname, `/.input`), { recursive: true })
-      fs.rmSync(path.join(__dirname, `/.state`), { recursive: true })
-      fs.rmSync(path.join(__dirname, `/.output`), { recursive: true })
-
-      // Re-create empty input, state, output folders
-      fs.mkdirSync(path.join(__dirname, `/.input`), { recursive: true })
-      fs.mkdirSync(path.join(__dirname, `/.state`), { recursive: true })
-      fs.mkdirSync(path.join(__dirname, `/.output`), { recursive: true })
-
       await ipfs.files.rm('/state', { recursive: true })
 
       // Create list of operations
@@ -901,7 +938,7 @@ describe('Datachain App', () => {
       // Create signed transaction
       const transaction = createSignedTransaction(datasetId, privateKey1, publicKey1, operations)
 
-      fs.writeFileSync(`${__dirname}/.input/transaction.json`, stringify(transaction, null, 2))
+      mockAxiosCartesiFinish(200, transaction)
 
       await app.run()
 

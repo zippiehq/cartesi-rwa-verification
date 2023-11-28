@@ -2,6 +2,10 @@
 
 WIP - Airimpact Carbon Credits Dataset using Cartesi Verification (Prototype)
 
+## Prerequisites
+
+Install and run local IPFS node (e.g. IPFS Dektop App)
+
 ## Install dependencies
 
 ```

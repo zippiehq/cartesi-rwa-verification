@@ -1,5 +1,4 @@
 import crypto from 'crypto'
-import fs from 'fs'
 import process from 'process'
 
 import { stringify } from 'safe-stable-stringify'
@@ -17,19 +16,17 @@ import {
 } from './validation'
 
 import { create } from 'ipfs-http-client'
+import axios from 'axios'
 
 const apiUrl = process.env.IPFS_API || 'http://127.0.0.1:5001'
 const ipfs = create({ url: apiUrl })
 
+const cartesiRollupServer = process.env.ROLLUP_HTTP_SERVER_URL || 'http://127.0.0.1:5004'
+
 export default class App {
-  private inputPath: string
+  private statePath: string = '/state'
 
-  private statePath: string
-
-  constructor(inputPath: string, statePath: string) {
-    this.inputPath = inputPath
-    this.statePath = statePath
-  }
+  constructor() {}
 
   private async existFileIpfs(path: string): Promise<boolean> {
     try {
@@ -61,6 +58,20 @@ export default class App {
     await ipfs.files.write(path, data, { create: true })
   }
 
+  private async callCartesiFinish(): Promise<string> {
+    const request = await axios.post(`${cartesiRollupServer}/finish`, {})
+
+    if (request.status == 202) {
+      return ''
+    }
+
+    if (request.data.request_type == 'advance_state') {
+      return request.data.data
+    }
+
+    return ''
+  }
+
   public async run(): Promise<void> {
     try {
       // Verification status
@@ -75,9 +86,10 @@ export default class App {
         await ipfs.files.mkdir(`${this.statePath}`)
       }
 
-      // Read transaction input (doesn't exisit on first run after deployment, and compare with  https://ethereum.org/en/developers/docs/transactions/)
-      if (fs.existsSync(`${this.inputPath}/transaction.json`)) {
-        const transactionInput = JSON.parse(fs.readFileSync(`${this.inputPath}/transaction.json`, 'utf-8'))
+      // Call Cartesi finish API to fetch next transaction (note: we only fetch once for each run unlike a normal Cartesi DApp)
+      const data = await this.callCartesiFinish()
+      if (data !== '') {
+        const transactionInput = JSON.parse(data)
         const transaction = validateTransaction(transactionInput)
 
         // Check signature
