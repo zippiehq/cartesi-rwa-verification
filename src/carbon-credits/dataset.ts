@@ -1,6 +1,5 @@
 import { utils } from '@zippie/dataset-utils'
 import Axios, { ResponseType } from 'axios'
-import JSZip from 'jszip'
 
 import {
   Asset,
@@ -48,7 +47,7 @@ export default class DatasetCarbonCredits implements Dataset {
 
   datasetHistory: [] | null = null
 
-  constructor(cid: string, baseURL = 'https://tosiscan-testnet-one.zippie.com') {
+  constructor(cid: string, baseURL = 'https://lambada.tspre.org') {
     this.cid = cid
     this.baseURL = baseURL
   }
@@ -62,48 +61,45 @@ export default class DatasetCarbonCredits implements Dataset {
     return axios.get(url)
   }
 
-  private static async unzip(blob: any, file: string): Promise<any> {
-    const zip = new JSZip()
-    const zipped = await zip.loadAsync(blob)
-    const data = await zipped.file(file)?.async('string')
-    if (!data) return null
-    return JSON.parse(data)
-  }
-
   async fetchDataset() {
-    const sealResponse = await this.get(`/tosi/api/v1/query-seal/${this.cid}`, 'json')
-    const path = sealResponse.data.status
-    const [output] = await Promise.all([this.get(`/tosi/api/v0/ipfs/get/${path}/output.zip`, 'blob')])
-    const [dataset, nonces, owners, metadata, batches, assets, balances, events, verifications] = await Promise.all([
-      DatasetCarbonCredits.unzip(output.data, 'dataset.json'),
-      DatasetCarbonCredits.unzip(output.data, 'nonces.json'),
-      DatasetCarbonCredits.unzip(output.data, 'owners.json'),
-      DatasetCarbonCredits.unzip(output.data, 'metadata.json'),
-      DatasetCarbonCredits.unzip(output.data, 'batches.json'),
-      DatasetCarbonCredits.unzip(output.data, 'assets.json'),
-      DatasetCarbonCredits.unzip(output.data, 'balances.json'),
-      DatasetCarbonCredits.unzip(output.data, 'events.json'),
-      DatasetCarbonCredits.unzip(output.data, 'verifications.json'),
-    ])
-    this.datasetInfo = dataset || null
-    this.nonces = nonces || []
-    this.owners = owners || []
-    this.metadata = metadata || null
-    this.batches = batches || []
-    this.assets = assets || []
-    this.balances = balances || {}
-    this.events = events || []
-    this.verifications = verifications
+    const latestStateResponse = await this.get(`/latest/${this.cid}`, 'json')
+    const latestStateCid = latestStateResponse.data.state_cid
+
+    const dataset = await this.get(`ipfs/${latestStateCid}/dataset.json`, 'json')
+    this.datasetInfo = dataset.data || null
+
+    const nonces = await this.get(`ipfs/${latestStateCid}/nonces.json`, 'json')
+    this.nonces = nonces.data || []
+
+    const owners = await this.get(`ipfs/${latestStateCid}/owners.json`, 'json')
+    this.owners = owners.data || []
+
+    const metadata = await this.get(`ipfs/${latestStateCid}/metadata.json`, 'json')
+    this.metadata = metadata.data || null
+
+    const batches = await this.get(`ipfs/${latestStateCid}/batches.json`, 'json')
+    this.batches = batches.data || []
+
+    const assets = await this.get(`ipfs/${latestStateCid}/assets.json`, 'json')
+    this.assets = assets.data || []
+
+    const balances = await this.get(`ipfs/${latestStateCid}/balances.json`, 'json')
+    this.balances = balances.data || {}
+
+    const events = await this.get(`ipfs/${latestStateCid}/events.json`, 'json')
+    this.events = events.data || []
+
+    const verifications = await this.get(`ipfs/${latestStateCid}/verifications.json`, 'json')
+    this.verifications = verifications.data
   }
 
   async fetchDatasetHistory() {
-    // Get claims from Datachain API
-    const claimsResponse = await this.get(`/tosi/api/v1/query-claims/${this.cid}`, 'json')
-    this.claims = claimsResponse.data as Claim[]
-
-    // Fetch Arbitrum and Ethereum transaction data
-    const ethereumTransactionData = await utils.getEthereumTransactionDataForAllClaims(this.cid)
-    this.ethereumTransactionData = ethereumTransactionData as utils.types.EthereumTransactionData[]
+    // // Get claims from Datachain API
+    // const claimsResponse = await this.get(`/tosi/api/v1/query-claims/${this.cid}`, 'json')
+    // this.claims = claimsResponse.data as Claim[]
+    // // Fetch Arbitrum and Ethereum transaction data
+    // const ethereumTransactionData = await utils.getEthereumTransactionDataForAllClaims(this.cid)
+    // this.ethereumTransactionData = ethereumTransactionData as utils.types.EthereumTransactionData[]
   }
 
   getDatasetInfo(): DatasetInfo | null {
