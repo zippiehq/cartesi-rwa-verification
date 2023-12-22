@@ -75,11 +75,10 @@ const readFileIpfs = async (path: string): Promise<string> => {
 }
 
 const mockAxiosCartesiGetTx = (status: number, transaction: Transaction | null) => {
-  const data = transaction ? stringify(transaction, null, 2) : ''
   mockedAxios.get.mockImplementation(async (route) => {
     if (route.includes('/get_tx'))
       return Promise.resolve({
-        data,
+        data: transaction,
         status,
         statusText: 'OK',
         config: {},
@@ -113,9 +112,8 @@ describe('Datachain App', () => {
 
   describe('Airimpact Carbon Credit Dataset - Multiple transactions with single operations', () => {
     it('run app without new transaction available', async () => {
-      // Status 202 means no new transaction available
       mockAxiosCartesiGetTx(200, null)
-      mockAxiosCartesiFinish(202, null)
+      mockAxiosCartesiFinish(200, null)
 
       await app.run()
 

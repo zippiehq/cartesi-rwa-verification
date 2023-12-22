@@ -58,7 +58,7 @@ export default class App {
     await ipfs.files.write(path, data, { create: true })
   }
 
-  private async callCartesiGetTx(): Promise<string> {
+  private async callCartesiGetTx(): Promise<any> {
     const request = await axios.get(`${cartesiRollupServer}/get_tx`, {})
 
     return request.data
@@ -86,9 +86,8 @@ export default class App {
 
       // Call Cartesi finish API to fetch next transaction (note: we only fetch once for each run unlike a normal Cartesi DApp)
       const data = await this.callCartesiGetTx()
-      if (data !== '') {
-        const transactionInput = JSON.parse(data)
-        const transaction = validateTransaction(transactionInput)
+      if (data) {
+        const transaction = validateTransaction(data)
 
         // Check signature
         const input = {
@@ -526,6 +525,7 @@ export default class App {
       if (!(await this.existFileIpfs(`${this.statePath}/verifications.json`))) {
         await this.writeFileIpfs(`${this.statePath}/verifications.json`, JSON.stringify([verification], null, 2))
       } else {
+        if (!data) throw new Error('No transaction data') // Only allow empty transaction data if there is no verification history (i.e. first transaction for "warm up")
         const verifications = JSON.parse(await this.readFileIpfs(`${this.statePath}/verifications.json`))
         verifications.push(verification)
         await this.writeFileIpfs(`${this.statePath}/verifications.json`, JSON.stringify(verifications, null, 2))
