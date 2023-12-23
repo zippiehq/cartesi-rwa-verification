@@ -1,0 +1,3 @@
+#!/bin/sh
+ipfs files read /app/docker.tar.gz | gzip -dc | docker load
+docker run -e ROLLUP_HTTP_SERVER=http://127.0.0.1:5004 --network host app:1.0

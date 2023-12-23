@@ -74,13 +74,26 @@ const readFileIpfs = async (path: string): Promise<string> => {
   }
 }
 
+const mockAxiosCartesiGetTx = (status: number, transaction: Transaction | null) => {
+  mockedAxios.get.mockImplementation(async (route) => {
+    if (route.includes('/get_tx'))
+      return Promise.resolve({
+        data: transaction,
+        status,
+        statusText: 'OK',
+        config: {},
+        headers: {},
+      })
+  })
+}
+
 const mockAxiosCartesiFinish = (status: number, transaction: Transaction | null) => {
   mockedAxios.post.mockImplementation(async (route) => {
     if (route.includes('/finish'))
       return Promise.resolve({
         data: {
-          request_type: 'advance_state',
-          data: transaction ? stringify(transaction, null, 2) : '',
+          // request_type: 'advance_state',
+          // data: transaction ? stringify(transaction, null, 2) : '',
         },
         status,
         statusText: 'OK',
@@ -99,8 +112,8 @@ describe('Datachain App', () => {
 
   describe('Airimpact Carbon Credit Dataset - Multiple transactions with single operations', () => {
     it('run app without new transaction available', async () => {
-      // Status 202 means no new transaction available
-      mockAxiosCartesiFinish(202, null)
+      mockAxiosCartesiGetTx(200, null)
+      mockAxiosCartesiFinish(200, null)
 
       await app.run()
 
@@ -135,6 +148,7 @@ describe('Datachain App', () => {
       const transaction = createSignedTransaction(datasetId, privateKey1, publicKey1, operations)
 
       // Status 200 means new transaction available
+      mockAxiosCartesiGetTx(200, transaction)
       mockAxiosCartesiFinish(200, transaction)
 
       await app.run()
@@ -205,6 +219,7 @@ describe('Datachain App', () => {
       // Create signed transaction
       const transaction = createSignedTransaction(datasetId, privateKey1, publicKey1, operations)
 
+      mockAxiosCartesiGetTx(200, transaction)
       mockAxiosCartesiFinish(200, transaction)
 
       await app.run()
@@ -256,6 +271,7 @@ describe('Datachain App', () => {
       // Sign transaction
       const transaction = createSignedTransaction(datasetId, privateKey1, publicKey1, operations)
 
+      mockAxiosCartesiGetTx(200, transaction)
       mockAxiosCartesiFinish(200, transaction)
 
       await app.run()
@@ -322,6 +338,7 @@ describe('Datachain App', () => {
       // Create signed transaction
       const transaction = createSignedTransaction(datasetId, privateKey1, publicKey1, operations)
 
+      mockAxiosCartesiGetTx(200, transaction)
       mockAxiosCartesiFinish(200, transaction)
 
       await app.run()
@@ -486,6 +503,7 @@ describe('Datachain App', () => {
       // Create signed transaction
       const transaction = createSignedTransaction(datasetId, privateKey1, publicKey1, operations)
 
+      mockAxiosCartesiGetTx(200, transaction)
       mockAxiosCartesiFinish(200, transaction)
 
       await app.run()
@@ -672,6 +690,7 @@ describe('Datachain App', () => {
       // Create signed transaction
       const transaction = createSignedTransaction(datasetId, privateKey1, publicKey1, operations)
 
+      mockAxiosCartesiGetTx(200, transaction)
       mockAxiosCartesiFinish(200, transaction)
 
       await app.run()
@@ -807,6 +826,7 @@ describe('Datachain App', () => {
       // Create signed transaction
       const transaction = createSignedTransaction(datasetId, privateKey1, publicKey1, operations)
 
+      mockAxiosCartesiGetTx(200, transaction)
       mockAxiosCartesiFinish(200, transaction)
 
       await app.run()
@@ -938,6 +958,7 @@ describe('Datachain App', () => {
       // Create signed transaction
       const transaction = createSignedTransaction(datasetId, privateKey1, publicKey1, operations)
 
+      mockAxiosCartesiGetTx(200, transaction)
       mockAxiosCartesiFinish(200, transaction)
 
       await app.run()
