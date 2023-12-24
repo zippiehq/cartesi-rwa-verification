@@ -1,3 +1,7 @@
 #!/bin/sh
-ipfs files read /app/docker.tar.gz | gzip -dc | docker load
-docker run -e ROLLUP_HTTP_SERVER=http://127.0.0.1:5004 --network host app:1.0
+mkdir -p /tmpfs
+mount -o size=1G -t tmpfs tmpfs /tmpfs
+echo "Unpacking from IPFS"
+ipfs files read /app/bundle.tar.gz | tar -C /tmpfs -zxf - --warning=no-timestamp
+echo "Starting container"
+crun run -b /tmpfs app
