@@ -9,6 +9,6 @@ jq '.process.terminal = false' bundle/config.json > bundle/config.json.new2
 # host network
 jq '.linux.namespaces |= map(select(.type != "network"))' bundle/config.json.new2 > bundle/config.json
 rm -f bundle/config.json.new bundle/config.json.new2
-tar -C bundle -zcf genesis/app/bundle.tar.gz .
+tar -C bundle -zcf genesis/gov/app/bundle.tar.gz .
 rm -rf bundle
 rm docker.tar
